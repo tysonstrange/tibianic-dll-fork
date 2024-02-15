@@ -73,23 +73,6 @@ asm("_popRegisters:      \n\
 LRESULT CALLBACK HookedMessageDispatcher(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
   ScopedCriticalSection section(7);
   
-  // Save caller
-  /*
-  SAVE_STACK;
-  SAVE_REGISTERS;
-  asm(".intel_syntax noprefix       \n\
-      mov esp, dword ptr ss:[ebp]   \n\
-      pop ebp                       \n\
-      mov esp, dword ptr ss:[ebp]   \n\
-      pop ebp                       \n\
-      mov eax, dword ptr ss:[ebp+4] \n\
-      mov _g_lastCaller, eax        \n\
-      .att_syntax;                  \n\
-  ");
-  LOAD_REGISTERS;
-  LOAD_STACK;
-  */
-  
   // Mouse common variables
   g_lastMousePosition.x = GET_X_LPARAM(lParam);
   g_lastMousePosition.y = GET_Y_LPARAM(lParam);
@@ -507,20 +490,6 @@ int APIENTRY HookedSend(SOCKET s, char* buff, int len, int flags){
     }
   }
   
-  if(Tibia::IsOnline()){
-    // Lets encrypt the packet with the TSA
-    /* uint32_t pos = 0;
-    while(pos < len){
-      uint16_t plen = *(uint16_t*)(buff + pos);
-      uint32_t* buffer = (uint32_t*)(buff + 2 + pos);
-      
-      for(int i = 0; i < plen / 4; i++){
-        buffer[i] ^= *(uint32_t*)PLAYER_ACCOUNT_NUMBER ^ 88;
-      }
-      
-      pos = pos + plen + 2;
-    } */
-  }
   return send(s, buff, len, flags);
 }
 
@@ -587,19 +556,6 @@ int APIENTRY HookedRecv(SOCKET s, char* buff, int len, int flags){
 void Render(int nSurface){
   // Local variables for any use
   static char messageBuffer[1024];
-  /*
-  // Sample skins
-  int start = 0;
-  for(int i = start; i <= start + 50; i++){
-    Painter::drawSkin(nSurface, 50 + (i - start) * 32, 150, 32, 32, i, 0, 0);
-    sprintf(messageBuffer, "%d", i);
-    Painter::drawText(nSurface, 50 + (i - start) * 32, 150, FONT_NORMAL_OUTLINED, 255, 255, 255, messageBuffer, 0);
-  }
-  // girder = 10, 41, 147 can be used
-  */
-  
-  //sprintf(messageBuffer, "caller = 0x%04x", g_lastCaller);
-  //Painter::drawText(nSurface, 40, 20, FONT_NORMAL_OUTLINED, 255, 255, 255, messageBuffer, 0);
   
   if(g_dll.m_gameMenu){
     static int height = 70;
@@ -706,105 +662,6 @@ void HookedTimer(){
   }
 }
 
-/* This function is a this call, ecx contains GUIItem */
-int _stdcall HookedGetIconSkin(int iconNumber){
-  SAVE_STACK;
-  SAVE_REGISTERS;
-  
-  Creature_t* player = Tibia::GetCreatureEntry(Tibia::GetPlayerInfo(PLAYER_INFO_ID));
-  bool iconFound = false;
-  
-  if(player->skull != SKULL_NONE){
-    if(iconNumber == 0){
-      switch(player->skull){
-        case SKULL_YELLOW: {
-          g_lastTmp = 0x0EC;
-          break;
-        }
-        
-        case SKULL_GREEN: {
-          g_lastTmp = 0x0ED;
-          break;
-        }        
-        
-        case SKULL_WHITE: {
-          g_lastTmp = 0x0EE;
-          break;
-        }
-        
-        case SKULL_RED: {
-          g_lastTmp = 0x0EF;
-          break;
-        }
-      }
-      
-      iconFound = true;
-    } else {    
-      iconNumber = iconNumber - 1;
-    }
-  }
-  
-  for(uint32_t icon = 1; !iconFound && icon <= (1 << 30); icon <<= 1){
-    if((Tibia::GetPlayerInfo(PLAYER_INFO_ICONS) & icon) == icon){
-      switch(icon){
-        case FLAG_POISON: {
-          g_lastTmp = 0x0E4;
-          break;
-        }
-          
-        case FLAG_FIRE: {
-          g_lastTmp = 0x0E5;
-          break;
-        }
-          
-        case FLAG_ENERGY: {
-          g_lastTmp = 0x0E6;
-          break;
-        }
-          
-        case FLAG_DRUNK: {
-          g_lastTmp = 0x0E7;
-          break;
-        }
-          
-        case FLAG_MANA_SHIELD: {
-          g_lastTmp = 0x0E8;
-          break;
-        }
-          
-        case FLAG_PARALYZE: {
-          g_lastTmp = 0x0E9;
-          break;
-        }
-          
-        case FLAG_HASTE: {
-          g_lastTmp = 0x0EA;
-          break;
-        }
-          
-        case FLAG_SWORDS: {
-          g_lastTmp = 0x0EB;
-          break;
-        }
-          
-        default: break;
-      }
-      
-      if(iconNumber == 0){
-        iconFound = true;
-        break;
-      }
-      
-      iconNumber = iconNumber - 1;
-    }
-  }
-  
-  LOAD_REGISTERS;
-  LOAD_STACK;
-  
-  return g_lastTmp;
-}
-
 void HookedDrawCreatureName(int nSurface, int nX, int nY, int nFont, int nRed, int nGreen, int nBlue, char* lpText, int nAlign){
   SAVE_STACK;
   SAVE_REGISTERS;
@@ -872,137 +729,6 @@ void HookedDrawCreatureName(int nSurface, int nX, int nY, int nFont, int nRed, i
   LOAD_STACK;
 }
 
-void HookedParsePacketSwitch(){
-  SAVE_STACK;
-  SAVE_REGISTERS;
-  
-  switch(g_lastEcx){
-    /* Quest log */
-    case 0xF0: {
-      int amount = Tibia::NetworkGetU16();
-      
-      std::vector<std::string> questsNames;
-      std::vector<int> questsIds;
-      
-      while(amount --> 0){
-        uint16_t questId = Tibia::NetworkGetU16();
-        std::string questName = Tibia::NetworkGetString();
-        uint8_t questCompleted = Tibia::NetworkGetU8();
-        
-        if(questCompleted){
-          questName.append(" (Completed)");
-        }
-        
-        questsNames.push_back(questName);
-        questsIds.push_back(questId);
-      }
-      
-      g_dll.m_questsDialog->setQuests(questsNames, questsIds);
-      
-      g_gui->setDialog(g_dll.m_questsDialog);
-      break;
-    }
-    
-    /* Quest information */
-    case 0xF1: {
-      int questId = Tibia::NetworkGetU16();
-      int amount = Tibia::NetworkGetU8();
-
-      std::vector<std::string> missions;
-      std::vector<std::string> descriptions;
-      
-      while(amount --> 0){
-        std::string missionName = Tibia::NetworkGetString();
-        std::string missionDescription = Tibia::NetworkGetString();
-        
-        missions.push_back(missionName);
-        descriptions.push_back(missionDescription);
-      }
-      
-      g_dll.m_questDialog->setMissions(missions, descriptions);;
-      
-      g_gui->setDialog(g_dll.m_questDialog);
-      break;
-    }
-    
-    /* Shared experience indicator */
-    case 0xA8: {
-      g_dll.m_sharedExperience = Tibia::NetworkGetU8();
-      break;
-    }
-    
-    /* New outfit dialog */
-    case 0xC9: {
-      Outfit_t defaultOutfit;
-      
-      defaultOutfit.type = Tibia::NetworkGetU16();
-      if(defaultOutfit.type != 0){
-        defaultOutfit.masks.head = Tibia::NetworkGetU8();
-        defaultOutfit.masks.body = Tibia::NetworkGetU8();
-        defaultOutfit.masks.legs = Tibia::NetworkGetU8();
-        defaultOutfit.masks.feet = Tibia::NetworkGetU8();
-      } else {
-        uint16_t itemId = Tibia::NetworkGetU16();
-        
-        /* Split into two 8 bits variables */
-        defaultOutfit.masks.head = itemId >> 8;
-        defaultOutfit.masks.body = itemId >> 0;
-      }
-      
-      uint16_t outfits = Tibia::NetworkGetU8();
-      
-      std::vector< std::pair<uint32_t, std::string> > list;
-      for(int i = 0; i < outfits; i++){
-        uint16_t lookType = Tibia::NetworkGetU16();
-        std::string name = Tibia::NetworkGetString();
-        
-        list.push_back(std::pair<uint32_t, std::string>(lookType, name));
-      }
-      
-      g_dll.m_outfitDialog->setOutfits(list);    
-      g_dll.m_outfitDialog->setOutfit(defaultOutfit);
-      
-      g_gui->setDialog(g_dll.m_outfitDialog);
-      break;
-    }
-    
-    default: {
-      char error[64];
-      sprintf(error, "Unknown packet received (%02X)", g_lastEcx);
-      Tibia::FatalError((const char*)error);
-    }
-  }
-  
-  LOAD_REGISTERS;
-  LOAD_STACK;
-}
-
-void _stdcall HookedAddSetOutfitContextMenu(int id, char* text, char* hint){
-  SAVE_STACK;
-  SAVE_REGISTERS;
-  
-  /* Replace set outfit event with our own */
-  Tibia::AddContextMenu(0x1001, text, hint);
-  
-  /* Shared experience */
-  const char* _enableShared = "Enable Shared Experience";
-  const char* _disableShared = "Disable Shared Experience";
-  
-  Creature_t* player = Tibia::GetCreatureEntry(Tibia::GetPlayerInfo(PLAYER_INFO_ID));
-  if(player->party == PARTY_LEADER){
-    LOAD_ESI;
-    MOV(ECX, ESI);
-    if(g_dll.m_sharedExperience){
-      Tibia::AddContextMenu(0x1000, _disableShared, NULL);
-    } else {
-      Tibia::AddContextMenu(0x1000, _enableShared, NULL);
-    }
-  }
-  
-  LOAD_REGISTERS;
-  LOAD_STACK;
-}
-
 extern "C" void _cdecl contextEvent(uint32_t eventId){
   switch(eventId){
     case 0x1000: {
@@ -1014,16 +740,6 @@ extern "C" void _cdecl contextEvent(uint32_t eventId){
     }
   }
 }
-
-/* 
-  Original asembler code:  
-  004A0F36  |. 51             PUSH ECX
-  004A0F37  |. 8BC8           MOV ECX,EAX
-  004A0F39  |. FF52 70        CALL DWORD PTR DS:[EDX+70]
-
-  Replaced with:
-  004A0F36  |. E8 4303EA68    CALL _HookedOnPushEvent
-*/
 
 extern "C" void HookedOnPushEvent();
 asm("_HookedOnPushEvent:      \n\
@@ -1455,11 +1171,7 @@ LIB::~LIB(){
 void LIB::Initialize(){
   m_currentProcess  = GetCurrentProcess();
   m_currentProcessId = GetCurrentProcessId();
- 
-  //const char* p("14299623962416399520070177382898895550795403345466153217470516082934737582776038882967213386204600674145392845853859217990626450972452084065728686565928113");
-  //const char* q("7630979195970404721891201847792002125535401292779123937207447574596692788513647179235335529307251350570728407373705564708871762033017096809910315212884101");
-  //const char* d("46730330223584118622160180015036832148732986808519344675210555262940258739805766860224610646919605860206328024326703361630109888417839241959507572247284807035235569619173792292786907845791904955103601652822519121908367187885509270025388641700821735345222087940578381210879116823013776808975766851829020659073");
-  
+
   const char* p("14299623962416399520070177382898895550795403345466153217470516082934737582776038882967213386204600674145392845853859217990626450972452084065728686565928113");
   const char* q("7630979195970404721891201847792002125535401292779123937207447574596692788513647179235335529307251350570728407373705564708871762033017096809910315212884101");
   const char* d("46730330223584118622160180015036832148732986808519344675210555262940258739805766860224610646919605860206328024326703361630109888417839241959507572247284807035235569619173792292786907845791904955103601652822519121908367187885509270025388641700821735345222087940578381210879116823013776808975766851829020659073");
@@ -1473,14 +1185,6 @@ void LIB::Initialize(){
   if(WSAStartup(MAKEWORD(1, 1), &wsaData) != 0){
     m_error = std::string("Tibria client was unable to initialize winsock!");
   }
-  
-  /* Mutex for anti client */
-  // CreateMutex(NULL, FALSE, "_Tibria");
-  
-  /* Check last error from creation of the mutex */
-  // if(GetLastError() == ERROR_ALREADY_EXISTS){
-  //  m_error = std::string("Tibria client is already running!");
-  // }
   
   // Lets check if map directory is available, if not - lets create it
   if(!CreateDirectory((MAP_DIR), NULL)){
@@ -1556,9 +1260,6 @@ void LIB::FirstTick(){
   // Lets make it as dialog
   g_gui->setDialog(m_updateDialog);
   
-  //GUITestDialog* dialog = new GUITestDialog();
-  //g_gui->setDialog(dialog);
-  
   // Load configuration file for the advanced options
   m_optionsDialog->loadConfig();
   
@@ -1597,47 +1298,15 @@ void LIB::InitializeMemory(){
   
   /*char* */m_chunk = new char[m_chunkLength];
   ZeroMemory(m_chunk, m_chunkLength);
-  
-  // mana:
-  // 0044B978  |. A3 2C685C00    MOV DWORD PTR DS:[5C682C],EAX
-  // 0044BA20  /$ A1 2C685C00    MOV EAX,DWORD PTR DS:[5C682C]
-  // 00450A84   . 891D 2C685C00  MOV DWORD PTR DS:[5C682C],EBX
-  
+
   AsmDword(0x44B978 + 1, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_MANA);
   AsmDword(0x44BA20 + 1, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_MANA);
   AsmDword(0x450A84 + 2, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_MANA);
-  
-  // health:
-  // 0044B938  |. A3 48685C00    MOV DWORD PTR DS:[5C6848],EAX
-  // 0044B9D0  /$ A1 48685C00    MOV EAX,DWORD PTR DS:[5C6848]
-  // 00450A66   . 891D 48685C00  MOV DWORD PTR DS:[5C6848],EBX
-  // 00450DB8   . A1 48685C00    MOV EAX,DWORD PTR DS:[5C6848]
-  
+
   AsmDword(0x44B938 + 1, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_HEALTH);
   AsmDword(0x44B9D0 + 1, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_HEALTH);
   AsmDword(0x450A66 + 2, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_HEALTH);
   AsmDword(0x450DB8 + 1, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_HEALTH);
-  
-  // PLAYER_ID:
-  // 0044B924  |. A3 4C685C00    MOV DWORD PTR DS:[5C684C],EAX
-  // 0044B9C0  /$ A1 4C685C00    MOV EAX,DWORD PTR DS:[5C684C]
-  // 0044BBF2  |. 3B05 4C685C00  CMP EAX,DWORD PTR DS:[5C684C]
-  // 0044BC12  |. 3B05 4C685C00  CMP EAX,DWORD PTR DS:[5C684C]
-  // 0044BC32  |. 3B05 4C685C00  CMP EAX,DWORD PTR DS:[5C684C]
-  // 0044BCD7  |. 3B0D 4C685C00  CMP ECX,DWORD PTR DS:[5C684C]  
-  // 0044D6D0  /$ A1 4C685C00    MOV EAX,DWORD PTR DS:[5C684C]
-  // 0044D6F0  /$ A1 4C685C00    MOV EAX,DWORD PTR DS:[5C684C]
-  // 0044D720  /$ A1 4C685C00    MOV EAX,DWORD PTR DS:[5C684C]  
-  // 0044D88F  |> 8B0D 4C685C00  MOV ECX,DWORD PTR DS:[5C684C]
-  // 00450A60   . 891D 4C685C00  MOV DWORD PTR DS:[5C684C],EBX
-  // 00450DC5   . 8B15 4C685C00  MOV EDX,DWORD PTR DS:[5C684C]
-  // 0045114B   . 8B15 4C685C00  MOV EDX,DWORD PTR DS:[5C684C]  
-  // 004516FE  |. A1 4C685C00    MOV EAX,DWORD PTR DS:[5C684C]
-  // 004518CE  |. A1 4C685C00    MOV EAX,DWORD PTR DS:[5C684C]
-  // 004519B6   . A1 4C685C00    MOV EAX,DWORD PTR DS:[5C684C]  
-  // 00451A59   . 8B15 4C685C00  MOV EDX,DWORD PTR DS:[5C684C]
-  // 00451C0D   . 8B0D 4C685C00  MOV ECX,DWORD PTR DS:[5C684C]    
-  // 00451ECD  |. A1 4C685C00    MOV EAX,DWORD PTR DS:[5C684C]
   
   AsmDword(0x44B924 + 1, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_ID);
   AsmDword(0x44B9C0 + 1, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_ID);  
@@ -1659,38 +1328,11 @@ void LIB::InitializeMemory(){
   AsmDword(0x451C0D + 2, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_ID);      
   AsmDword(0x451ECD + 1, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_ID);
   
-  // PLAYER_U:
-  /*
-  004B6494  MOV DWORD PTR DS:[5D16E4],EAX
-  004B6516  MOV EAX,DWORD PTR DS:[5D16E4]
-  004BDF92  MOV ECX,DWORD PTR DS:[5D16E4]
-  004BE9E1  MOV EAX,DWORD PTR DS:[5D16E4]
-  004BF6A6  MOV DWORD PTR DS:[5D16E4],ESI
-  */
-  
   AsmDword(0x4B6494 + 1, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_U);
   AsmDword(0x4B6516 + 1, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_U);
   AsmDword(0x4BDF92 + 2, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_U);
   AsmDword(0x4BE9E1 + 1, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_U);
   AsmDword(0x4BF6A6 + 2, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_U);
-  
-  
-  // PLAYER_Z:
-  /*
-  004B08B7   MOV DWORD PTR DS:[5D16E8],EDX
-  004B08DB   MOV EDX,DWORD PTR DS:[5D16E8]             DS:[005D16E8]=00000000
-  004B08F0   MOV ECX,DWORD PTR DS:[5D16E8]             DS:[005D16E8]=00000000
-  004B0910   MOV EAX,DWORD PTR DS:[5D16E8]             [005D16E8]=00000000
-  004B0951   MOV ECX,DWORD PTR DS:[5D16E8]             DS:[005D16E8]=00000000
-  004B0960   MOV EAX,DWORD PTR DS:[5D16E8]             [005D16E8]=00000000
-  004B09A1   MOV ESI,DWORD PTR DS:[5D16E8]             DS:[005D16E8]=00000000
-  004BB1CF   MOV ECX,DWORD PTR DS:[5D16E8]             DS:[005D16E8]=00000000
-  004BC2DA   MOV ECX,DWORD PTR DS:[5D16E8]             DS:[005D16E8]=00000000
-  004BE1CC   MOV ECX,DWORD PTR DS:[5D16E8]             DS:[005D16E8]=00000000
-  004BEBAE   MOV ECX,DWORD PTR DS:[5D16E8]             DS:[005D16E8]=00000000
-  004BEC2F   MOV EAX,DWORD PTR DS:[5D16E8]             [005D16E8]=00000000
-  004BF6A0   MOV DWORD PTR DS:[5D16E8],EDI
-  */
   
   AsmDword(0x4B08B7 + 2, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_Z);
   AsmDword(0x4B08DB + 2, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_Z);
@@ -1706,19 +1348,6 @@ void LIB::InitializeMemory(){
   AsmDword(0x4BEC2F + 1, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_Z);
   AsmDword(0x4BF6A0 + 2, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_Z);
   
-  // PLAYER_Y:
-  /*
-  004B08B1   MOV DWORD PTR DS:[5D16EC],ECX
-  004B08D0   MOV EAX,DWORD PTR DS:[5D16EC]             [005D16EC]=00000000
-  004B0941   MOV ECX,DWORD PTR DS:[5D16EC]             DS:[005D16EC]=00000000
-  004B0988   MOV EDI,DWORD PTR DS:[5D16EC]             DS:[005D16EC]=00000000
-  004BC300   SUB EDX,DWORD PTR DS:[5D16EC]             DS:[005D16EC]=00000000
-  004BD584   MOV EAX,DWORD PTR DS:[5D16EC]             [005D16EC]=00000000
-  004BD5A6   MOV DWORD PTR DS:[5D16EC],EAX
-  004BEBFB   MOV EDX,DWORD PTR DS:[5D16EC]             DS:[005D16EC]=00000000
-  004BF69A   MOV DWORD PTR DS:[5D16EC],EDI
-  */
-  
   AsmDword(0x4B08B1 + 2, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_Y);
   AsmDword(0x4B08D0 + 1, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_Y);
   AsmDword(0x4B0941 + 2, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_Y);
@@ -1728,19 +1357,6 @@ void LIB::InitializeMemory(){
   AsmDword(0x4BD5A6 + 1, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_Y);
   AsmDword(0x4BEBFB + 2, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_Y);
   AsmDword(0x4BF69A + 2, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_Y);
-  
-  // PLAYER_X: 
-  /*
-  004B08AC   MOV DWORD PTR DS:[5D16F0],EAX
-  004B08C0   MOV ECX,DWORD PTR DS:[5D16F0]             DS:[005D16F0]=00000000
-  004B0930   MOV ECX,DWORD PTR DS:[5D16F0]             DS:[005D16F0]=00000000
-  004B096D   MOV EDI,DWORD PTR DS:[5D16F0]             DS:[005D16F0]=00000000
-  004BC2EE   SUB EDX,DWORD PTR DS:[5D16F0]             DS:[005D16F0]=00000000
-  004BD57E   MOV ECX,DWORD PTR DS:[5D16F0]             DS:[005D16F0]=00000000
-  004BD5A0   MOV DWORD PTR DS:[5D16F0],ECX
-  004BEBEF   MOV EDX,DWORD PTR DS:[5D16F0]             DS:[005D16F0]=00000000
-  004BF694   MOV DWORD PTR DS:[5D16F0],EDI
-  */  
   
   AsmDword(0x4B08AC + 1, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_X);
   AsmDword(0x4B08C0 + 2, (DWORD)m_chunk + CHUNK_OFFSET_PLAYER_X);
@@ -1824,12 +1440,6 @@ void LIB::SendXTEANetworkMessage(NetworkMessage* message){
   
   int transmitted = 0;
   int bytestosend = *(uint16_t*)m_messageBuffer + NetworkMessage::header_length;
-
-  // encrypt with TSA
-  /* uint32_t* m_bodyBuffer = (uint32_t*)(m_messageBuffer + NetworkMessage::header_length);
-  for(int i = 0; i < (bytestosend - NetworkMessage::header_length)/4; i++){
-    m_bodyBuffer[i] ^= *(uint32_t*)PLAYER_ACCOUNT_NUMBER ^ 88;
-  } */
  
   while(transmitted != bytestosend){
     int ret = send(g_dll.m_socket, m_messageBuffer + transmitted, bytestosend - transmitted, 0);
@@ -1958,16 +1568,8 @@ void LIB::InitializeHook(){
   // new code - check for stack validation!
   HookAsmCall(GUI_CLICK_EVENT_CODECAVE_CALL_ADDRESS, (DWORD)&HookedOnPushEvent);  
   
-  //commented
-  //HookAsmCall(ADD_CONTEXT_MENU_EX_CALL_SET_OUTFIT_FUNCTION_ADDRESS, (DWORD)&HookedAddSetOutfitContextMenu);
-  
-  HookAsmCall(0x0044B089, (DWORD)&HookedParsePacketSwitch);
-  
   // new code - check for stack validation!
   HookAsmCall(0x004C8C6C, (DWORD)&HookedDrawCreatureName);
-  
-  // STDCALL
-  HookAsmCall(0x0043729A, (DWORD)&HookedGetIconSkin);
   
   // new code - check for stack validation!
   HookAsmCall(0x004A9B30, (DWORD)&HookedTimer);
